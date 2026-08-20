@@ -1,0 +1,221 @@
+name: CI-test-core
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - LICENSE
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - LICENSE
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GITHUB_ACTIONS: true
+
+jobs:
+  pytest:
+    strategy:
+      matrix:
+        os-version: [windows-latest, ubuntu-latest, macos-14]
+        python-version: ['3.11']
+
+    runs-on: ${{ matrix.os-version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: pnpm/action-setup@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: 0.11.28
+          python-version: ${{ matrix.python-version }}
+          enable-cache: false
+
+      - name: Install dependencies
+        run: pnpm run core:sync
+
+      - name: Check shared version
+        run: pnpm run version:check
+
+      - name: Test
+        run: pnpm run core:check
+
+      - name: Codecov
+        if: matrix.os-version == 'ubuntu-latest'
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: core/coverage.xml
+
+  build:
+    strategy:
+      matrix:
+        os-version: [windows-latest, ubuntu-latest, macos-14]
+        python-version: ['3.11']
+
+    runs-on: ${{ matrix.os-version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: pnpm/action-setup@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: 0.11.28
+          python-version: ${{ matrix.python-version }}
+          enable-cache: false
+
+      - name: Install dependencies
+        run: pnpm run core:sync:bundle
+
+      - name: Build
+        run: pnpm run core:bundle
+
+      - name: Archive on Windows
+        if: matrix.os-version == 'windows-latest'
+        shell: pwsh
+        run: |
+          Set-Location core\dist\Final2x-core
+          7z a -r Final2x-core-${{ matrix.os-version }}.7z *
+
+      - name: Archive on non-Windows
+        if: matrix.os-version != 'windows-latest'
+        run: |
+          cd core/dist/Final2x-core
+          7z a -r Final2x-core-${{ matrix.os-version }}.7z ./*
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: Final2x-core-${{ matrix.os-version }}
+          path: core/dist/Final2x-core/*.7z
+
+  test-build:
+    needs: [build]
+    strategy:
+      matrix:
+        os-version: [windows-latest, ubuntu-latest, macos-14]
+
+    runs-on: ${{ matrix.os-version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: Final2x-core-${{ matrix.os-version }}
+          path: core/dist
+
+      - name: Extract build
+        run: |
+          cd core/dist
+          7z x Final2x-core-${{ matrix.os-version }}.7z -oFinal2x-core
+
+      - name: Test build on Windows
+        if: matrix.os-version == 'windows-latest'
+        run: pnpm run core:test:bundle:windows
+
+      - name: Test build on Unix
+        if: matrix.os-version != 'windows-latest'
+        run: pnpm run core:test:bundle:unix
+
+  build-wheel:
+    strategy:
+      matrix:
+        python-version: ['3.11']
+
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: pnpm/action-setup@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: 0.11.28
+          python-version: ${{ matrix.python-version }}
+          enable-cache: false
+
+      - name: Build package
+        run: pnpm run core:build:wheel
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheel
+          path: core/dist/*.whl
+
+  pip-test:
+    needs: [build-wheel]
+    strategy:
+      matrix:
+        os-version: [ubuntu-latest]
+        python-version: ['3.11']
+        pytorch-version: ['2.7.1', '2.1.2', '2.0.0']
+
+    runs-on: ${{ matrix.os-version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: wheel
+          path: core/dist
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install PyTorch 2.7.1
+        if: matrix.pytorch-version == '2.7.1'
+        run: pip install torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1
+
+      - name: Install PyTorch 2.1.2
+        if: matrix.pytorch-version == '2.1.2'
+        run: pip install torch==2.1.2 torchvision==0.16.2 torchaudio==2.1.2
+
+      - name: Install PyTorch 2.0.0
+        if: matrix.pytorch-version == '2.0.0'
+        run: pip install torch==2.0.0 torchvision==0.15.1 torchaudio==2.0.1
+
+      - name: Install dependencies
+        run: |
+          pip install numpy==1.26.4
+          pip install opencv-python==4.10.0.84
+          pip install core/dist/*.whl
+
+      - name: Test pip
+        run: pnpm run core:test:pip

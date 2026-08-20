@@ -7,3 +7,10 @@ out
 /outputs/
 /.idea
 /coverage/
+/.coverage
+/*.spec
+/core/.venv/
+/core/build/
+/core/dist/
+/core/coverage.xml
+/core/htmlcov/

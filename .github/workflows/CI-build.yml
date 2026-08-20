@@ -2,170 +2,172 @@ name: CI-build
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
     paths-ignore:
       - '**.md'
       - LICENSE
   pull_request:
+    branches: [main]
     paths-ignore:
       - '**.md'
       - LICENSE
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-build-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   windows:
     strategy:
+      fail-fast: false
       matrix:
-        os-version: ['x64', 'arm64']
-
+        arch: [x64, arm64]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
 
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
-      - name: build
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: 0.11.28
+          python-version: '3.11'
+          enable-cache: false
+
+      - name: Install dependencies
         run: |
-          pnpm install
-          pnpm fetchcore
-          pnpm run build:win-${{ matrix.os-version }}
+          pnpm install --frozen-lockfile
+          pnpm run core:sync:bundle
+
+      - name: Build bundled core
+        run: pnpm run core:bundle
+
+      - name: Copy bundled core
+        run: Copy-Item core\dist\Final2x-core resources\Final2x-core -Recurse
+
+      - name: Smoke-test bundled core
+        run: resources\Final2x-core\Final2x-core.exe -h
+
+      - name: Build desktop app
+        run: pnpm run build:win-${{ matrix.arch }}
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
 
-      - name: zip-unpacked-x64
-        if: matrix.os-version == 'x64'
+      - name: Archive unpacked app
+        shell: pwsh
         run: |
-          cd .\dist\win-unpacked
-          7z a -r Final2x-windows-${{ matrix.os-version }}-unpacked.7z *
+          $directory = if ('${{ matrix.arch }}' -eq 'x64') { 'dist/win-unpacked' } else { 'dist/win-arm64-unpacked' }
+          Push-Location $directory
+          7z a -mx=1 -r "Final2x-windows-${{ matrix.arch }}-unpacked.7z" *
+          Pop-Location
 
-      - name: zip-unpacked-arm64
-        if: matrix.os-version == 'arm64'
-        run: |
-          cd .\dist\win-arm64-unpacked
-          7z a -r Final2x-windows-${{ matrix.os-version }}-unpacked.7z *
-
-      - name: upload-unpacked-x64
-        if: matrix.os-version == 'x64'
+      - name: Upload unpacked app
         uses: actions/upload-artifact@v4
         with:
-          name: Final2x-windows-${{ matrix.os-version }}-unpacked
-          path: dist/win-unpacked/*.7z
-
-      - name: upload-unpacked-arm64
-        if: matrix.os-version == 'arm64'
-        uses: actions/upload-artifact@v4
-        with:
-          name: Final2x-windows-${{ matrix.os-version }}-unpacked
-          path: dist/win-arm64-unpacked/*.7z
+          name: Final2x-windows-${{ matrix.arch }}-unpacked
+          path: |
+            dist/win-unpacked/Final2x-windows-${{ matrix.arch }}-unpacked.7z
+            dist/win-arm64-unpacked/Final2x-windows-${{ matrix.arch }}-unpacked.7z
 
   macos:
-    strategy:
-      matrix:
-        os-version: ['arm64']
-
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
 
       - uses: pnpm/action-setup@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
-          version: 10
+          version: 0.11.28
+          python-version: '3.11'
+          enable-cache: false
 
-      - name: build
+      - name: Install dependencies
         run: |
-          pnpm install
-          pnpm fetchcore
-          pnpm run build:mac-${{ matrix.os-version }}
+          pnpm install --frozen-lockfile
+          pnpm run core:sync:bundle
+
+      - name: Build bundled core
+        run: pnpm run core:bundle
+
+      - name: Copy bundled core
+        run: cp -R core/dist/Final2x-core resources/
+
+      - name: Smoke-test bundled core
+        run: resources/Final2x-core/Final2x-core -h
+
+      - name: Build desktop app
+        run: pnpm run build:mac-arm64
         env:
-          ARCH: ${{ matrix.os-version }}
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
 
-      - name: zip-unpacked-arm64
-        if: matrix.os-version == 'arm64'
+      - name: Smoke-test self-contained packaged core
         run: |
-          cd ./dist/mac-arm64
-          7z a -r Final2x-macos-${{ matrix.os-version }}-unpacked.7z *
+          mv core/dist/Final2x-core "$RUNNER_TEMP/Final2x-core-build"
+          mv resources/Final2x-core "$RUNNER_TEMP/Final2x-core-staged"
+          dist/mac-arm64/Final2x.app/Contents/Resources/Final2x-core/Final2x-core -h
 
-      - name: upload-dmg
+      - name: Archive unpacked app
+        run: |
+          cd dist/mac-arm64
+          7z a -mx=1 -r Final2x-macos-arm64-unpacked.7z ./*
+
+      - name: Upload dmg
         uses: actions/upload-artifact@v4
         with:
-          name: Final2x-macos-${{ matrix.os-version }}-dmg
+          name: Final2x-macos-arm64-dmg
           path: dist/*.dmg
 
-      - name: upload-unpacked-arm64
-        if: matrix.os-version == 'arm64'
+      - name: Upload unpacked app
         uses: actions/upload-artifact@v4
         with:
-          name: Final2x-macos-${{ matrix.os-version }}-unpacked
-          path: dist/mac-arm64/*.7z
+          name: Final2x-macos-arm64-unpacked
+          path: dist/mac-arm64/Final2x-macos-arm64-unpacked.7z
 
-  linux-pip:
-    strategy:
-      matrix:
-        os-version: ['x64']
-
+  linux:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
 
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
-      - name: build
-        run: |
-          pnpm install
-          pnpm run build:linux-${{ matrix.os-version }}
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build desktop app
+        run: pnpm run build:linux-x64
         env:
-          SKIP_DOWNLOAD_CORE: true
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
 
-      - name: zip-unpacked
+      - name: Archive unpacked app
         run: |
-          cd ./dist/linux-unpacked
-          7z a -r Final2x-linux-pip-${{ matrix.os-version }}-unpacked.7z *
+          cd dist/linux-unpacked
+          7z a -mx=1 -r Final2x-linux-pip-x64-unpacked.7z ./*
 
-      - name: upload-snap
+      - name: Upload packages
         uses: actions/upload-artifact@v4
         with:
-          name: Final2x-linux-pip-${{ matrix.os-version }}-snap
-          path: dist/*.snap
-
-      - name: upload-AppImage
-        uses: actions/upload-artifact@v4
-        with:
-          name: Final2x-linux-pip-${{ matrix.os-version }}-AppImage
-          path: dist/*.AppImage
-
-      - name: upload-deb
-        uses: actions/upload-artifact@v4
-        with:
-          name: Final2x-linux-pip-${{ matrix.os-version }}-deb
-          path: dist/*.deb
-
-      - name: upload-unpacked
-        uses: actions/upload-artifact@v4
-        with:
-          name: Final2x-linux-pip-${{ matrix.os-version }}-unpacked
-          path: dist/linux-unpacked/*.7z
+          name: Final2x-linux-pip-x64
+          path: |
+            dist/*.snap
+            dist/*.AppImage
+            dist/*.deb
+            dist/linux-unpacked/Final2x-linux-pip-x64-unpacked.7z

@@ -6,8 +6,13 @@ export default antfu(
       'dist',
       'out',
       'node_modules',
+      '.mypy_cache',
+      '.ruff_cache',
+      'coverage',
       'build/*.js',
       'resources/*.js',
+      'resources/Final2x-core',
+      'core',
     ],
     rules: {
       'no-console': 'off',

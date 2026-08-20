@@ -2,43 +2,40 @@ name: CI-test
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
     paths-ignore:
       - '**.md'
       - LICENSE
   pull_request:
+    branches: [main]
     paths-ignore:
       - '**.md'
       - LICENSE
   workflow_dispatch:
 
-jobs:
-  test:
-    strategy:
-      matrix:
-        os-version: ['ubuntu-latest']
+permissions:
+  contents: read
 
-    runs-on: ${{ matrix.os-version }}
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
 
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm run lint:frontend
+
+      - name: Typecheck
+        run: pnpm run typecheck
 
       - name: Test
-        run: |
-          pnpm install
-          pnpm run lint
-          pnpm run typecheck
-          pnpm run test
-        env:
-          SKIP_DOWNLOAD_CORE: true
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: pnpm run test
