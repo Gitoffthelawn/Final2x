@@ -1,44 +1,39 @@
 name: Release
 
 on:
-  workflow_dispatch:
   push:
     tags:
       - 'v*'
 
-concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: false
-
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          fetch-depth: 0
 
-      - uses: pnpm/action-setup@v4
+      - name: Verify release commit is on main
+        shell: bash
+        run: |
+          release_commit="$(git rev-parse "${GITHUB_SHA}^{commit}")"
+          if ! git merge-base --is-ancestor "$release_commit" origin/main; then
+            echo "Release commit $release_commit is not on main." >&2
+            exit 1
+          fi
 
-      - name: Verify shared version
-        if: github.event_name == 'workflow_dispatch'
-        run: pnpm run version:check
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
       - name: Verify tag and shared version
-        if: github.event_name == 'push'
-        run: pnpm run version:check -- --tag "${{ github.ref_name }}"
+        run: python scripts/check_version.py --tag "${{ github.ref_name }}"
 
   windows:
     needs: validate
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: [x64, arm64]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -50,43 +45,41 @@ jobs:
       - uses: pnpm/action-setup@v4
 
       - name: Install uv
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        uses: astral-sh/setup-uv@v10.0.1
         with:
-          version: 0.11.28
           python-version: '3.11'
           enable-cache: false
 
       - name: Install dependencies
         run: |
           pnpm install --frozen-lockfile
-          pnpm run core:sync:bundle
+          uv sync --project core --locked --no-default-groups --group dev
 
       - name: Build bundled core
-        run: pnpm run core:bundle
+        run: |
+          make -C core gen
+          make -C core pyinstaller
 
       - name: Copy bundled core
         run: Copy-Item core\dist\Final2x-core resources\Final2x-core -Recurse
 
       - name: Build desktop app
-        run: pnpm run build:win-${{ matrix.arch }}
+        run: pnpm run build:win-x64
         env:
           GH_TOKEN: ${{ github.token }}
 
       - name: Archive unpacked app
         shell: pwsh
         run: |
-          $directory = if ('${{ matrix.arch }}' -eq 'x64') { 'dist/win-unpacked' } else { 'dist/win-arm64-unpacked' }
-          Push-Location $directory
-          7z a -mx=1 -v1900m -r "Final2x-windows-${{ matrix.arch }}-unpacked.7z" *
+          Push-Location dist\win-unpacked
+          7z a -r "Final2x-windows-x64-unpacked.7z" *
           Pop-Location
 
       - name: Upload unpacked app
         uses: actions/upload-artifact@v4
         with:
-          name: Final2x-windows-${{ matrix.arch }}-unpacked
-          path: |
-            dist/win-unpacked/Final2x-windows-${{ matrix.arch }}-unpacked.7z.*
-            dist/win-arm64-unpacked/Final2x-windows-${{ matrix.arch }}-unpacked.7z.*
+          name: Final2x-windows-x64-unpacked
+          path: dist/win-unpacked/Final2x-windows-x64-unpacked.7z
 
   macos:
     needs: validate
@@ -101,19 +94,20 @@ jobs:
       - uses: pnpm/action-setup@v4
 
       - name: Install uv
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        uses: astral-sh/setup-uv@v10.0.1
         with:
-          version: 0.11.28
           python-version: '3.11'
           enable-cache: false
 
       - name: Install dependencies
         run: |
           pnpm install --frozen-lockfile
-          pnpm run core:sync:bundle
+          uv sync --project core --locked --no-default-groups --group dev
 
       - name: Build bundled core
-        run: pnpm run core:bundle
+        run: |
+          make -C core gen
+          make -C core pyinstaller
 
       - name: Copy bundled core
         run: cp -R core/dist/Final2x-core resources/
@@ -129,7 +123,7 @@ jobs:
       - name: Archive unpacked app
         run: |
           cd dist/mac-arm64
-          7z a -mx=1 -r Final2x-macos-arm64-unpacked.7z ./*
+          7z a -r Final2x-macos-arm64-unpacked.7z ./*
 
       - name: Upload dmg
         uses: actions/upload-artifact@v4
@@ -172,7 +166,7 @@ jobs:
       - name: Archive unpacked app
         run: |
           cd dist/linux-unpacked
-          7z a -mx=1 -r Final2x-linux-pip-x64-unpacked.7z ./*
+          7z a -r Final2x-linux-pip-x64-unpacked.7z ./*
 
       - name: Upload packages
         uses: actions/upload-artifact@v4
@@ -185,55 +179,30 @@ jobs:
             dist/linux-unpacked/Final2x-linux-pip-x64-unpacked.7z
 
   pypi:
-    if: github.repository == 'EutropicAI/Final2x' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    needs: [validate, windows, macos, linux]
+    needs: [windows, macos, linux]
     runs-on: ubuntu-latest
-    environment:
-      name: pypi
-      url: https://pypi.org/p/Final2x-core
-    permissions:
-      id-token: write
-      contents: read
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - uses: pnpm/action-setup@v4
-
       - name: Install uv
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        uses: astral-sh/setup-uv@v10.0.1
         with:
-          version: 0.11.28
           python-version: '3.11'
           enable-cache: false
 
       - name: Build Python distribution
-        run: pnpm run core:build
+        run: uv build core
 
       - name: Publish Python distribution to PyPI
+        if: github.repository == 'EutropicAI/Final2x'
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
+          password: ${{ secrets.PYPI_API }}
           packages-dir: core/dist/
 
   github-release:
-    needs: [windows, macos, linux, pypi]
-    if: >-
-      always() &&
-      github.event_name == 'push' &&
-      startsWith(github.ref, 'refs/tags/v') &&
-      needs.windows.result == 'success' &&
-      needs.macos.result == 'success' &&
-      needs.linux.result == 'success' &&
-      (
-        (github.repository == 'EutropicAI/Final2x' && needs.pypi.result == 'success') ||
-        (github.repository != 'EutropicAI/Final2x' && needs.pypi.result == 'skipped')
-      )
+    needs: pypi
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - name: Download release artifacts
         uses: actions/download-artifact@v4
@@ -249,7 +218,4 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
-          prerelease: ${{ github.repository != 'EutropicAI/Final2x' }}
-          make_latest: ${{ github.repository == 'EutropicAI/Final2x' }}
           files: dist/*

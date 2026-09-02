@@ -2,12 +2,10 @@ name: CI-build
 
 on:
   push:
-    branches: [main]
     paths-ignore:
       - '**.md'
       - LICENSE
   pull_request:
-    branches: [main]
     paths-ignore:
       - '**.md'
       - LICENSE
@@ -16,16 +14,8 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: ci-build-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
-
 jobs:
   windows:
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: [x64, arm64]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -37,19 +27,20 @@ jobs:
       - uses: pnpm/action-setup@v4
 
       - name: Install uv
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        uses: astral-sh/setup-uv@v10.0.1
         with:
-          version: 0.11.28
           python-version: '3.11'
           enable-cache: false
 
       - name: Install dependencies
         run: |
           pnpm install --frozen-lockfile
-          pnpm run core:sync:bundle
+          uv sync --project core --locked --no-default-groups --group dev
 
       - name: Build bundled core
-        run: pnpm run core:bundle
+        run: |
+          make -C core gen
+          make -C core pyinstaller
 
       - name: Copy bundled core
         run: Copy-Item core\dist\Final2x-core resources\Final2x-core -Recurse
@@ -58,25 +49,29 @@ jobs:
         run: resources\Final2x-core\Final2x-core.exe -h
 
       - name: Build desktop app
-        run: pnpm run build:win-${{ matrix.arch }}
+        run: pnpm run build:win-x64
         env:
           GH_TOKEN: ${{ github.token }}
+
+      - name: Smoke-test self-contained packaged core
+        shell: pwsh
+        run: |
+          Move-Item core\dist\Final2x-core "$env:RUNNER_TEMP\Final2x-core-build"
+          Move-Item resources\Final2x-core "$env:RUNNER_TEMP\Final2x-core-staged"
+          & "dist\win-unpacked\resources\Final2x-core\Final2x-core.exe" -h
 
       - name: Archive unpacked app
         shell: pwsh
         run: |
-          $directory = if ('${{ matrix.arch }}' -eq 'x64') { 'dist/win-unpacked' } else { 'dist/win-arm64-unpacked' }
-          Push-Location $directory
-          7z a -mx=1 -r "Final2x-windows-${{ matrix.arch }}-unpacked.7z" *
+          Push-Location dist\win-unpacked
+          7z a -r "Final2x-windows-x64-unpacked.7z" *
           Pop-Location
 
       - name: Upload unpacked app
         uses: actions/upload-artifact@v4
         with:
-          name: Final2x-windows-${{ matrix.arch }}-unpacked
-          path: |
-            dist/win-unpacked/Final2x-windows-${{ matrix.arch }}-unpacked.7z
-            dist/win-arm64-unpacked/Final2x-windows-${{ matrix.arch }}-unpacked.7z
+          name: Final2x-windows-x64-unpacked
+          path: dist/win-unpacked/Final2x-windows-x64-unpacked.7z
 
   macos:
     runs-on: macos-14
@@ -90,19 +85,20 @@ jobs:
       - uses: pnpm/action-setup@v4
 
       - name: Install uv
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        uses: astral-sh/setup-uv@v10.0.1
         with:
-          version: 0.11.28
           python-version: '3.11'
           enable-cache: false
 
       - name: Install dependencies
         run: |
           pnpm install --frozen-lockfile
-          pnpm run core:sync:bundle
+          uv sync --project core --locked --no-default-groups --group dev
 
       - name: Build bundled core
-        run: pnpm run core:bundle
+        run: |
+          make -C core gen
+          make -C core pyinstaller
 
       - name: Copy bundled core
         run: cp -R core/dist/Final2x-core resources/
@@ -124,7 +120,7 @@ jobs:
       - name: Archive unpacked app
         run: |
           cd dist/mac-arm64
-          7z a -mx=1 -r Final2x-macos-arm64-unpacked.7z ./*
+          7z a -r Final2x-macos-arm64-unpacked.7z ./*
 
       - name: Upload dmg
         uses: actions/upload-artifact@v4
@@ -160,7 +156,7 @@ jobs:
       - name: Archive unpacked app
         run: |
           cd dist/linux-unpacked
-          7z a -mx=1 -r Final2x-linux-pip-x64-unpacked.7z ./*
+          7z a -r Final2x-linux-pip-x64-unpacked.7z ./*
 
       - name: Upload packages
         uses: actions/upload-artifact@v4
