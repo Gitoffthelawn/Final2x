@@ -133,7 +133,7 @@ wheels = [
 
 [[package]]
 name = "cccv"
-version = "0.0.4"
+version = "0.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "einops" },
@@ -143,7 +143,16 @@ dependencies = [
     { name = "tenacity", version = "9.1.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/be/b3/36984e26080fd4f37566ada0e83832856a3cc80bce436f35cb5675c65dee/cccv-0.0.4-py3-none-any.whl", hash = "sha256:acbf7ef4f5a9ff9e38150a53638898864e1b3189e69da2d6f2a375a8f39eddfe", size = 107704, upload-time = "2025-09-27T00:18:45.054Z" },
+    { url = "https://files.pythonhosted.org/packages/c7/1a/c4c41eb26ccf4ac20849440597aff50568fc64fa95a4b807af010e4df763/cccv-0.1.0-py3-none-any.whl", hash = "sha256:9cdb272d2e5e7655e60f345587e4b640c2b00753c6064385e482beaf1bb5e7ce", size = 109668, upload-time = "2026-09-28T16:15:24.839Z" },
+]
+
+[[package]]
+name = "certifi"
+version = "2026.7.22"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/a3/c2/24167ea9858356b47a87a50d39908bfdb72ceeefe0041586e704e5376b3a/certifi-2026.7.22.tar.gz", hash = "sha256:741e2c3b351ddf169a738da9f2c048608ff7f2c5cc02f1ebc6b118bb090d5d55", size = 138112, upload-time = "2026-07-22T03:35:12.644Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0b/a7/71ac2cff56fec219ed242bb11b8efb69fcc4bec75db06fb7bfe35de520e6/certifi-2026.7.22-py3-none-any.whl", hash = "sha256:62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775", size = 136983, upload-time = "2026-07-22T03:35:11.276Z" },
 ]
 
 [[package]]
@@ -536,6 +545,7 @@ version = "4.1.0.dev0"
 source = { editable = "." }
 dependencies = [
     { name = "cccv" },
+    { name = "certifi" },
     { name = "loguru" },
     { name = "pydantic" },
     { name = "pyyaml" },
@@ -574,7 +584,8 @@ typing = [
 
 [package.metadata]
 requires-dist = [
-    { name = "cccv", specifier = "==0.0.4" },
+    { name = "cccv", specifier = "==0.1.0" },
+    { name = "certifi" },
     { name = "loguru" },
     { name = "pydantic" },
     { name = "pyyaml" },

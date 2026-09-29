@@ -34,7 +34,8 @@ classifiers = [
 ]
 dependencies = [
   "PyYAML",
-  "cccv==0.0.4",
+  "cccv==0.1.0",
+  "certifi",
   "loguru",
   "pydantic"
 ]
@@ -69,6 +70,9 @@ omit = [
 
 [tool.hatch.build.sources]
 "Final2x_core" = "Final2x_core"
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.build.targets.sdist]
 include = ["Final2x_core"]
