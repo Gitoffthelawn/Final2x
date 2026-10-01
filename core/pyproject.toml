@@ -8,7 +8,8 @@ dev = [
   "opencv-python~=4.10.0.84",
   "torch~=2.7.1",
   "torchvision~=0.22.1",
-  "pyinstaller~=6.16.0"
+  "pyinstaller~=6.16.0",
+  "truststore>=0.10.4,<0.11; sys_platform == 'darwin'"
 ]
 test = [
   "coverage",
@@ -26,7 +27,6 @@ typing = [
 [project]
 authors = [{ name = "Tohrusky" }]
 classifiers = [
-  "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
@@ -35,16 +35,16 @@ classifiers = [
 dependencies = [
   "PyYAML",
   "cccv==0.1.0",
-  "certifi",
   "loguru",
-  "pydantic"
+  "pydantic",
+  "truststore; sys_platform == 'darwin'"
 ]
 description = "core library for Final2x"
 license = "BSD-3-Clause"
 name = "Final2x_core"
 readme = "README.md"
-requires-python = ">=3.9, <4"
-version = "4.1.0-dev"
+requires-python = ">=3.10, <4"
+version = "4.1.0"
 
 [project.scripts]
 Final2x-core = "Final2x_core.__main__:main"
